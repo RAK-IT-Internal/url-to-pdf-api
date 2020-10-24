@@ -1,5 +1,7 @@
 const puppeteer = require('puppeteer');
 const _ = require('lodash');
+const sha1 = require('sha1');
+const fs = require('fs');
 const config = require('../config');
 const logger = require('../util/logger')(__filename);
 
@@ -38,7 +40,7 @@ async function getFullPageHeight(page) {
   return height;
 }
 
-async function render(_opts = {}) {
+async function render(_opts = {}, req) {
   const opts = _.merge({
     cookies: [],
     scrollPage: false,
@@ -71,6 +73,42 @@ async function render(_opts = {}) {
   }
 
   logOpts(opts);
+
+  var request_hash = sha1(JSON.stringify(opts));
+
+  if (opts.output === 'pdf') {
+    if (req.headers['cache-purge'] === 'backend') {
+      if (
+        fs.existsSync('./cache/'+request_hash+'.pdf') &&
+        fs.existsSync('./cache/'+request_hash+'.time') &&
+        fs.existsSync('./cache/'+request_hash+'.opts')
+      ) {
+        fs.unlinkSync('./cache/'+request_hash+'.pdf');
+        fs.unlinkSync('./cache/'+request_hash+'.time');
+        fs.unlinkSync('./cache/'+request_hash+'.opts');
+      }
+      return Buffer.from("PCFET0NUWVBFIGh0bWw+CjxodG1sPgogICAgPGhlYWQ+CiAgICAg"+
+      "ICAgPHRpdGxlPkJhY2tlbmQgUHVyZ2VkPC90aXRsZT4KICAgIDwvaGVhZD4KICAgIDxib2R"+
+      "5PgogICAgICAgIDxoMT5CYWNrZW5kIFB1cmdlZDwvaDE+CiAgICAgICAgPHA+UmVzb3VyY2"+
+      "UgZmlsZSBoYXMgYmVlbiBwdXJnZWQgZnJvbSB0aGUgYmFja2VuZCBjYWNoZS48L3A+CiAgI"+
+      "CAgICAgPGhyPgogICAgICAgIDxwPlJBS3dpcmVsZXNzIFJlc291cmNlczwvcD4KICAgIDwv"+
+      "Ym9keT4KPC9odG1sPgo=", 'base64').toString();
+    }
+    if (
+      fs.existsSync('./cache/'+request_hash+'.pdf') &&
+      fs.existsSync('./cache/'+request_hash+'.time') &&
+      fs.existsSync('./cache/'+request_hash+'.opts')
+    ) {
+      var cache_timestamp = Math.floor(Number(fs.readFileSync('./cache/'+request_hash+'.time')) / 1000);
+      var current_timestamp = Math.floor(new Date().getTime() / 1000);
+      if ((cache_timestamp+((60*60)*24)) > current_timestamp) { // cache for 24 hours
+        logger.info('Serving cached document: '+request_hash);
+        return fs.readFileSync('./cache/'+request_hash+'.pdf');
+      } else {
+        logger.info('Cache is expired: '+request_hash);
+      }
+    }
+  }
 
   const browser = await createBrowser(opts);
   const page = await browser.newPage();
@@ -201,6 +239,20 @@ async function render(_opts = {}) {
     if (!config.DEBUG_MODE) {
       await browser.close();
     }
+  }
+
+  if (opts.output === 'pdf') {
+    logger.info('Caching document: '+request_hash);
+
+    fs.writeFile('./cache/'+request_hash+'.pdf', data, function (err) {
+      if (err) {
+        logger.error(`Error when caching page: ${err}`);
+        throw err;
+      }
+      logger.info('Cache is created successfully.');
+      fs.writeFileSync('./cache/'+request_hash+'.time', (new Date()).getTime());
+      fs.writeFileSync('./cache/'+request_hash+'.opts', JSON.stringify(opts));
+    });
   }
 
   return data;

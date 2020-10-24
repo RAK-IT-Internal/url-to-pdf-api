@@ -25,7 +25,7 @@ const getRender = ex.createRoute((req, res) => {
   const opts = getOptsFromQuery(req.query);
 
   assertOptionsAllowed(opts);
-  return renderCore.render(opts)
+  return renderCore.render(opts, req)
     .then((data) => {
       if (opts.attachmentName) {
         res.attachment(opts.attachmentName);
@@ -60,7 +60,7 @@ const postRender = ex.createRoute((req, res) => {
   }
 
   assertOptionsAllowed(opts);
-  return renderCore.render(opts)
+  return renderCore.render(opts, req)
     .then((data) => {
       if (opts.attachmentName) {
         res.attachment(opts.attachmentName);
